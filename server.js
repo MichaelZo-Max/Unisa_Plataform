@@ -2,6 +2,20 @@ import express from 'express';
 import sql from 'mssql';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import dotenv from 'dotenv';
+import fs from 'fs';
+
+dotenv.config();
+
+console.log('Verificando API Key:', process.env.GEMINI_API_KEY ? 'Cargada correctament' : 'NO CARGADA');
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+
+// Cargar esquema para la IA
+const rawSchema = fs.readFileSync('./db_schema.json', 'utf8');
+const dbSchema = JSON.parse(rawSchema);
 
 const app = express();
 const port = 3002;
@@ -233,6 +247,71 @@ app.post('/api/login', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).send(err.message);
+    }
+});
+
+app.post('/api/chat', async (req, res) => {
+    const { message, history } = req.body;
+
+    if (!process.env.GEMINI_API_KEY) {
+        return res.json({ reply: "UniAmigo no está configurado (Falta GEMINI_API_KEY). Por favor contacta al administrador.", error: "Missing API Key" });
+    }
+
+    try {
+        const systemPrompt = `Eres UniAmigo, un asistente inteligente para la plataforma Unisa. 
+        Tienes acceso a una base de datos SQL Server. Tu tarea es ayudar al usuario a consultar información.
+        
+        ESQUEMA DE LA BASE DE DATOS:
+        ${JSON.stringify(dbSchema, null, 2)}
+        
+        REGLAS:
+        1. Si el usuario pide información que requiere una consulta SQL, responde ÚNICAMENTE con la consulta SQL encerrada en etiquetas <SQL>query</SQL>.
+        2. Si el usuario hace una pregunta general, responde amablemente en español.
+        3. NO inventes datos. Si no sabes, dilo.
+        4. Solo genera consultas SELECT (Solo lectura).
+        5. Para nombres de clientes similares usa LIKE.
+        6. Si el resultado de una consulta previa te es provisto, explica los resultados al usuario de forma humana.
+        
+        CONVERSACIÓN ACTUAL:
+        ${history.map(m => `${m.role}: ${m.content}`).join('\n')}
+        user: ${message}`;
+
+        const result = await model.generateContent(systemPrompt);
+        const response = await result.response;
+        const text = response.text();
+
+        // Verificar si la IA generó una consulta SQL
+        const sqlMatch = text.match(/<SQL>([\s\S]*?)<\/SQL>/);
+
+        if (sqlMatch) {
+            const query = sqlMatch[1].trim();
+            console.log("Ejecutando SQL sugerido por IA:", query);
+
+            try {
+                const pool = await sql.connect(dbConfig);
+                const dbResult = await pool.request().query(query);
+
+                // Segundio paso: Pedir a la IA que explique los resultados
+                const explainPrompt = `El usuario preguntó: "${message}". 
+                Ejecutamos esta consulta SQL: "${query}" 
+                Y obtuvimos estos resultados: ${JSON.stringify(dbResult.recordset)}
+                
+                Por favor, responde al usuario de forma amable y clara basándote en estos datos. Responde en español.`;
+
+                const explainResult = await model.generateContent(explainPrompt);
+                const finalReply = await explainResult.response.text();
+
+                res.json({ reply: finalReply });
+            } catch (dbErr) {
+                console.error("Error ejecutando SQL de IA:", dbErr);
+                res.json({ reply: "Tuve un problema al consultar la base de datos. ¿Podrías intentar ser más específico?" });
+            }
+        } else {
+            res.json({ reply: text });
+        }
+    } catch (err) {
+        console.error("Error en Chat IA:", err);
+        res.status(500).json({ error: "Error interno del servidor de IA" });
     }
 });
 
