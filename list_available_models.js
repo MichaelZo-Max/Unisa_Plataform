@@ -16,12 +16,10 @@ async function listModels() {
             return;
         }
 
-        console.log('Modelos disponibles para tu cuenta:');
-        data.models.forEach(m => {
-            if (m.supportedGenerationMethods.includes('generateContent')) {
-                console.log(`- ${m.name.replace('models/', '')}`);
-            }
-        });
+        const flashModels = data.models
+            .filter(m => m.supportedGenerationMethods.includes('generateContent') && m.name.toLowerCase().includes('flash'))
+            .map(m => m.name.replace('models/', ''));
+        console.log(flashModels.join(', '));
     } catch (error) {
         console.error('Error al conectar:', error.message);
     }

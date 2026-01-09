@@ -14,7 +14,7 @@ const dbConfig = {
 async function listTables() {
     try {
         await sql.connect(dbConfig);
-        const result = await sql.query("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%USER%' OR TABLE_NAME LIKE '%USUARIO%' ORDER BY TABLE_NAME");
+        const result = await sql.query("SELECT TOP 50 TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE='BASE TABLE' ORDER BY TABLE_NAME");
         console.log("User-related tables found:");
         console.log(result.recordset.map(r => r.TABLE_NAME).join(', '));
     } catch (err) {

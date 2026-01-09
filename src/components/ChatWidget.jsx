@@ -1,10 +1,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 
-const ChatWidget = () => {
+const ChatWidget = ({ onAction }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState([
-        { role: 'assistant', content: '¡Hola! Soy UniAmigo. ¿En qué puedo ayudarte hoy con la base de datos?' }
+        { role: 'assistant', content: '¡Hola! Soy UniAmigo. ¿En qué puedo ayudarte hoy?' }
     ]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -38,7 +38,18 @@ const ChatWidget = () => {
             if (data.error) {
                 setMessages(prev => [...prev, { role: 'assistant', content: 'Lo siento, hubo un error: ' + data.error }]);
             } else {
-                setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
+                let content = data.reply;
+
+                // Procesar acciones de la interfaz (UI_ACTION)
+                const actionMatch = content.match(/<UI_ACTION>([\s\S]*?)<\/UI_ACTION>/);
+                if (actionMatch && onAction) {
+                    const action = actionMatch[1].trim();
+                    onAction(action);
+                    // Limpiar el tag de la respuesta para no mostrarlo al usuario
+                    content = content.replace(/<UI_ACTION>[\s\S]*?<\/UI_ACTION>/g, '').trim();
+                }
+
+                setMessages(prev => [...prev, { role: 'assistant', content: content }]);
             }
         } catch (error) {
             setMessages(prev => [...prev, { role: 'assistant', content: 'Error de conexión con el servidor.' }]);

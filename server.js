@@ -11,7 +11,7 @@ dotenv.config();
 console.log('Verificando API Key:', process.env.GEMINI_API_KEY ? 'Cargada correctament' : 'NO CARGADA');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
 
 // Cargar esquema para la IA
 const rawSchema = fs.readFileSync('./db_schema.json', 'utf8');
@@ -252,25 +252,43 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/chat', async (req, res) => {
     const { message, history } = req.body;
+    console.log("Mensaje recibido de UniAmigo:", message);
 
     if (!process.env.GEMINI_API_KEY) {
         return res.json({ reply: "UniAmigo no está configurado (Falta GEMINI_API_KEY). Por favor contacta al administrador.", error: "Missing API Key" });
     }
 
     try {
+        const businessKnowledge = `
+        DICCIONARIO DE DATOS Y REGLAS:
+        - CIF: Es el RIF o Identificación Fiscal del cliente.
+        - DIRECCION1: Es la dirección principal.
+        - TELEFONO1: Es el teléfono principal.
+        - CLIENTES Activos: Son aquellos que no tienen fecha de fin de exclusión o cuya fecha es futura.
+        - USUARIOS_UNISA: Contiene los usuarios que acceden a ESTA plataforma (Unisa).
+        `;
+
         const systemPrompt = `Eres UniAmigo, un asistente inteligente para la plataforma Unisa. 
-        Tienes acceso a una base de datos SQL Server. Tu tarea es ayudar al usuario a consultar información.
-        
-        ESQUEMA DE LA BASE DE DATOS:
+        Tu tarea es ayudar al usuario a consultar información de negocio de forma amable.
+
+        ESQUEMA DE DATOS DISPONIBLE (Uso interno, NO mencionar al usuario):
         ${JSON.stringify(dbSchema, null, 2)}
+
+        ${businessKnowledge}
         
-        REGLAS:
-        1. Si el usuario pide información que requiere una consulta SQL, responde ÚNICAMENTE con la consulta SQL encerrada en etiquetas <SQL>query</SQL>.
-        2. Si el usuario hace una pregunta general, responde amablemente en español.
-        3. NO inventes datos. Si no sabes, dilo.
-        4. Solo genera consultas SELECT (Solo lectura).
-        5. Para nombres de clientes similares usa LIKE.
-        6. Si el resultado de una consulta previa te es provisto, explica los resultados al usuario de forma humana.
+        REGLAS CRÍTICAS:
+        1. PRIORIDAD DE NAVEGACIÓN Y ACCIÓN: Si el usuario pide ir a una sección o EDITAR/MODIFICAR un registro, responde con texto amable y un comando <UI_ACTION>.
+           Comandos disponibles:
+           - nav_clientes: Lleva a la tabla de gestión de clientes.
+           - nav_home: Lleva a la pantalla de inicio (dashboard).
+           - nav_config: Lleva a la configuración de usuarios de sistema.
+           - open_create_client: Abre el formulario para crear un nuevo cliente.
+           - edit_client:RIF : Abre el formulario de edición para el cliente con ese RIF (ej. <UI_ACTION>edit_client:J-123456</UI_ACTION>).
+        2. ¿CUÁNDO USAR EDITAR?: Si el usuario dice "quiero cambiar el nombre de X", "edita el cliente Y" o "corrige la dirección de Z", debes identificar el RIF del cliente y usar el comando edit_client:RIF.
+        3. CONSULTAS DE DATOS: Si el usuario pide información específica (ej. "¿quién es el cliente X?"), responde ÚNICAMENTE con la consulta SQL encerrada en <SQL>query</SQL>.
+        4. SI NO ENTIENDES O NO TIENES DATOS: Responde: "Lo siento, no tengo registros disponibles..."
+        5. NUNCA menciones términos técnicos ni nombres de tablas al usuario.
+        6. Responde siempre en español de forma profesional y cercana.
         
         CONVERSACIÓN ACTUAL:
         ${history.map(m => `${m.role}: ${m.content}`).join('\n')}
@@ -293,10 +311,13 @@ app.post('/api/chat', async (req, res) => {
 
                 // Segundio paso: Pedir a la IA que explique los resultados
                 const explainPrompt = `El usuario preguntó: "${message}". 
-                Ejecutamos esta consulta SQL: "${query}" 
-                Y obtuvimos estos resultados: ${JSON.stringify(dbResult.recordset)}
+                Obtuvimos estos datos de la plataforma: ${JSON.stringify(dbResult.recordset)}
                 
-                Por favor, responde al usuario de forma amable y clara basándote en estos datos. Responde en español.`;
+                Instrucciones para la respuesta:
+                1. Responde al usuario de forma amable, profesional y clara basándote en estos datos.
+                2. NUNCA menciones la consulta SQL, nombres de tablas ni términos técnicos.
+                3. Si no hay datos en el resultado (${JSON.stringify(dbResult.recordset)} está vacío), di educadamente que no se encontraron registros para esa solicitud.
+                4. Responde siempre en español.`;
 
                 const explainResult = await model.generateContent(explainPrompt);
                 const finalReply = await explainResult.response.text();
@@ -304,9 +325,10 @@ app.post('/api/chat', async (req, res) => {
                 res.json({ reply: finalReply });
             } catch (dbErr) {
                 console.error("Error ejecutando SQL de IA:", dbErr);
-                res.json({ reply: "Tuve un problema al consultar la base de datos. ¿Podrías intentar ser más específico?" });
+                res.json({ reply: "Tuve un pequeño inconveniente al procesar tu solicitud. ¿Podrías intentar ser más específico o preguntar de otra forma?" });
             }
         } else {
+            console.log("Respuesta de IA enviada:", text);
             res.json({ reply: text });
         }
     } catch (err) {

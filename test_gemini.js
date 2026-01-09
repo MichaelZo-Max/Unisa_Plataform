@@ -8,7 +8,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 async function test() {
     try {
         console.log("Testeando conexión con gemini-flash-latest...");
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+        const model = genAI.getGenerativeModel({ model: "gemini-pro-latest" });
         const response = await model.generateContent("Hola, responde con la palabra 'FUNCIONA' si recibes este mensaje.");
         console.log("Respuesta de la IA:", response.response.text());
     } catch (e) {

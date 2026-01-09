@@ -219,6 +219,46 @@ export default function ManagerDashboard({ onLogout, currentUser }) {
         setShowEditSystemUserModal(true);
     };
 
+    const handleUIAction = (action) => {
+        console.log("Acción recibida de UniAmigo:", action);
+
+        // Soporte para acciones con parámetros (ej: edit_client:J-123456)
+        const [command, parameter] = action.split(':');
+
+        switch (command) {
+            case 'nav_clientes':
+                setActiveTab('gestion-usuarios');
+                setShowCreateUserForm(false);
+                break;
+            case 'nav_home':
+                setActiveTab('inicio');
+                break;
+            case 'nav_config':
+                setActiveTab('configuracion');
+                break;
+            case 'open_create_client':
+                setActiveTab('gestion-usuarios');
+                setShowCreateUserForm(true);
+                break;
+            case 'edit_client':
+                if (parameter) {
+                    // Buscar el cliente en la lista actual por su RIF/CIF
+                    const clientToEdit = clients.find(c => c.RIF === parameter || c.CIF === parameter);
+                    if (clientToEdit) {
+                        setActiveTab('gestion-usuarios');
+                        setSelectedClient(clientToEdit);
+                        setShowEditModal(true);
+                        console.log("Abriendo edición para:", clientToEdit.Nombre);
+                    } else {
+                        console.warn("No se encontró el cliente con RIF:", parameter);
+                    }
+                }
+                break;
+            default:
+                console.warn("Acción no reconocida:", action);
+        }
+    };
+
 
     return (
         <div className="flex h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
@@ -1005,7 +1045,7 @@ export default function ManagerDashboard({ onLogout, currentUser }) {
                     </>
                 )}
             </main>
-            <ChatWidget />
+            <ChatWidget onAction={handleUIAction} />
         </div>
     );
 }
